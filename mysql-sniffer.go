@@ -9,6 +9,7 @@
  * FIXME: canonicalizer should collapse "IN (?,?,?,?)" and "VALUES (?,?,?,?)"
  * FIXME: tokenizer breaks on '"' or similarly embedded quotes
  * FIXME: tokenizer parses numbers in words wrong, i.e. s2compiled -> s?compiled
+ * TODO: fix the above issues or just add a parser to fix it
  *
  * written by Mark Smith <mark@qq.is>
  *
@@ -22,11 +23,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/akrennmair/gopcap"
-	"log"
 	"math/rand"
 	"strings"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
+	"github.com/akrennmair/gopcap"
 )
 
 const (
@@ -126,9 +128,6 @@ func main() {
 	dirty = *ldirty
 	parseFormat(*formatstr)
 	rand.Seed(time.Now().UnixNano())
-
-	log.SetPrefix("")
-	log.SetFlags(0)
 
 	log.Printf("Initializing MySQL sniffing on %s:%d...", *eth, port)
 	iface, err := pcap.Openlive(*eth, 1024, false, 0)
@@ -567,16 +566,4 @@ func parseFormat(formatstr string) {
 	if curstr != "" {
 		format = append(format, curstr)
 	}
-}
-
-func (self sortableSlice) Len() int {
-	return len(self)
-}
-
-func (self sortableSlice) Less(i, j int) bool {
-	return self[i].value < self[j].value
-}
-
-func (self sortableSlice) Swap(i, j int) {
-	self[i], self[j] = self[j], self[i]
 }
