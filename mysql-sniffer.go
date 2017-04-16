@@ -23,10 +23,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/akrennmair/gopcap"
-	_ "github.com/davecgh/go-spew/spew"
 	"log"
 	"math/rand"
-	"sort"
 	"strings"
 	"time"
 )
@@ -90,7 +88,6 @@ type queryData struct {
 	times [TIME_BUCKETS]uint64
 }
 
-var start int64 = UnixNow()
 var qbuf map[string]*queryData = make(map[string]*queryData)
 var querycount int
 var chmap map[string]*source = make(map[string]*source)
@@ -110,21 +107,17 @@ var stats struct {
 	streams uint64
 }
 
-func UnixNow() int64 {
-	return time.Now().Unix()
-}
-
 func main() {
 	var lport *int = flag.Int("P", 3306, "MySQL port to use")
 	var eth *string = flag.String("i", "eth0", "Interface to sniff")
 	var ldirty *bool = flag.Bool("u", false, "Unsanitized -- do not canonicalize queries")
-	var period *int = flag.Int("t", 10, "Seconds between outputting status")
-	var displaycount *int = flag.Int("d", 15, "Display this many queries in status updates")
+	//var period *int = flag.Int("t", 10, "Seconds between outputting status")
+	//var displaycount *int = flag.Int("d", 15, "Display this many queries in status updates")
 	var doverbose *bool = flag.Bool("v", false, "Print every query received (spammy)")
 	var nocleanquery *bool = flag.Bool("n", false, "no clean queries")
 	var formatstr *string = flag.String("f", "#s:#q", "Format for output aggregation")
-	var sortby *string = flag.String("s", "count", "Sort by: count, max, avg, maxbytes, avgbytes")
-	var cutoff *int = flag.Int("c", 0, "Only show queries over count/second")
+	//var sortby *string = flag.String("s", "count", "Sort by: count, max, avg, maxbytes, avgbytes")
+	//var cutoff *int = flag.Int("c", 0, "Only show queries over count/second")
 	flag.Parse()
 
 	verbose = *doverbose
@@ -148,114 +141,27 @@ func main() {
 	}
 
 	err = iface.Setfilter(fmt.Sprintf("tcp port %d", port))
+	//err = iface.Setfilter(fmt.Sprintf("tcp port %d and inbound", port))
 	if err != nil {
 		log.Fatalf("Failed to set port filter: %s", err.Error())
 	}
 
-	last := UnixNow()
+	//last := UnixNow()
 	var pkt *pcap.Packet = nil
 	var rv int32 = 0
 
-	for rv = 0; rv >= 0; {
-		for pkt, rv = iface.NextEx(); pkt != nil; pkt, rv = iface.NextEx() {
-			handlePacket(pkt)
-
-			// simple output printer... this should be super fast since we expect that a
-			// system like this will have relatively few unique queries once they're
-			// canonicalized.
-			if !verbose && querycount%1000 == 0 && last < UnixNow()-int64(*period) {
-				last = UnixNow()
-				handleStatusUpdate(*displaycount, *sortby, *cutoff)
-			}
-		}
-	}
-}
-
-func calculateTimes(timings *[TIME_BUCKETS]uint64) (fmin, favg, fmax float64) {
-	var counts, total, min, max, avg uint64 = 0, 0, 0, 0, 0
-	has_min := false
-	for _, val := range *timings {
-		if val == 0 {
-			// Queries should never take 0 nanoseconds. We are using 0 as a
-			// trigger to mean 'uninitialized reading'.
+	//for rv = 0; rv >= 0; {
+	for pkt, rv = iface.NextEx(); ; pkt, rv = iface.NextEx() {
+		if rv == 0 {
 			continue
 		}
-		if val < min || !has_min {
-			has_min = true
-			min = val
-		}
-		if val > max {
-			max = val
-		}
-		counts++
-		total += val
+		//fmt.Println("=================================================")
+		//fmt.Println(rv)
+		//fmt.Printf("%#v\n", pkt)
+		//fmt.Printf("%s\n", pkt.Data)
+		handlePacket(pkt)
 	}
-	if counts > 0 {
-		avg = total / counts // integer division
-	}
-	return float64(min) / 1000000, float64(avg) / 1000000,
-		float64(max) / 1000000
-}
-
-func handleStatusUpdate(displaycount int, sortby string, cutoff int) {
-	elapsed := float64(UnixNow() - start)
-
-	// print status bar
-	log.Printf("\n")
-	log.SetFlags(log.Ldate | log.Ltime)
-	log.Printf("%s%d total queries, %0.2f per second%s", COLOR_RED, querycount,
-		float64(querycount)/elapsed, COLOR_DEFAULT)
-	log.SetFlags(0)
-
-	log.Printf("%d packets (%0.2f%% on synchronized streams) / %d desyncs / %d streams",
-		stats.packets.rcvd, float64(stats.packets.rcvd_sync)/float64(stats.packets.rcvd)*100,
-		stats.desyncs, stats.streams)
-
-	// global timing values
-	gmin, gavg, gmax := calculateTimes(&times)
-	log.Printf("%0.2fms min / %0.2fms avg / %0.2fms max query times", gmin, gavg, gmax)
-	log.Printf("%d unique results in this filter", len(qbuf))
-	log.Printf(" ")
-	log.Printf("%s count     %sqps     %s  min    avg   max      %sbytes      per qry%s",
-		COLOR_YELLOW, COLOR_CYAN, COLOR_YELLOW, COLOR_GREEN, COLOR_DEFAULT)
-
-	// we cheat so badly here...
-	var tmp sortableSlice = make(sortableSlice, 0, len(qbuf))
-	for q, c := range qbuf {
-		qps := float64(c.count) / elapsed
-		if qps < float64(cutoff) {
-			continue
-		}
-
-		qmin, qavg, qmax := calculateTimes(&c.times)
-		bavg := uint64(float64(c.bytes) / float64(c.count))
-
-		sorted := float64(c.count)
-		if sortby == "avg" {
-			sorted = qavg
-		} else if sortby == "max" {
-			sorted = qmax
-		} else if sortby == "maxbytes" {
-			sorted = float64(c.bytes)
-		} else if sortby == "avgbytes" {
-			sorted = float64(bavg)
-		}
-
-		tmp = append(tmp, sortable{sorted, fmt.Sprintf(
-			"%s%6d  %s%7.2f/s  %s%6.2f %6.2f %6.2f  %s%9db %6db %s%s%s",
-			COLOR_YELLOW, c.count, COLOR_CYAN, qps, COLOR_YELLOW, qmin, qavg, qmax,
-			COLOR_GREEN, c.bytes, bavg, COLOR_WHITE, q, COLOR_DEFAULT)})
-	}
-	sort.Sort(tmp)
-
-	// now print top to bottom, since our sorted list is sorted backwards
-	// from what we want
-	if len(tmp) < displaycount {
-		displaycount = len(tmp)
-	}
-	for i := 1; i <= displaycount; i++ {
-		log.Printf(tmp[len(tmp)-i].line)
-	}
+	//}
 }
 
 // Do something with a packet for a source.
@@ -402,6 +308,7 @@ func processPacket(rs *source, request bool, data []byte) {
 	qdata.count++
 	qdata.bytes += plen
 	rs.qtext, rs.qdata, rs.qbytes = text, qdata, plen
+	fmt.Println(rs.qtext)
 }
 
 // carvePacket tries to pull a packet out of a slice of bytes. If so, it removes
@@ -486,7 +393,6 @@ func handlePacket(pkt *pcap.Packet) {
 		stats.streams++
 		chmap[src] = rs
 	}
-
 	// Now with a source, process the packet.
 	processPacket(rs, request, pkt.Data[pos:])
 }
