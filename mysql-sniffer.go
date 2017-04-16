@@ -113,13 +113,9 @@ func main() {
 	var lport *int = flag.Int("P", 3306, "MySQL port to use")
 	var eth *string = flag.String("i", "eth0", "Interface to sniff")
 	var ldirty *bool = flag.Bool("u", false, "Unsanitized -- do not canonicalize queries")
-	//var period *int = flag.Int("t", 10, "Seconds between outputting status")
-	//var displaycount *int = flag.Int("d", 15, "Display this many queries in status updates")
 	var doverbose *bool = flag.Bool("v", false, "Print every query received (spammy)")
 	var nocleanquery *bool = flag.Bool("n", false, "no clean queries")
 	var formatstr *string = flag.String("f", "#s:#q", "Format for output aggregation")
-	//var sortby *string = flag.String("s", "count", "Sort by: count, max, avg, maxbytes, avgbytes")
-	//var cutoff *int = flag.Int("c", 0, "Only show queries over count/second")
 	flag.Parse()
 
 	verbose = *doverbose
@@ -145,28 +141,19 @@ func main() {
 		log.Fatalf("Failed to set port filter: %s", err.Error())
 	}
 
-	//last := UnixNow()
 	var pkt *pcap.Packet = nil
 	var rv int32 = 0
 
-	//for rv = 0; rv >= 0; {
 	for pkt, rv = iface.NextEx(); ; pkt, rv = iface.NextEx() {
 		if rv == 0 {
 			continue
 		}
-		//fmt.Println("=================================================")
-		//fmt.Println(rv)
-		//fmt.Printf("%#v\n", pkt)
-		//fmt.Printf("%s\n", pkt.Data)
 		handlePacket(pkt)
 	}
-	//}
 }
 
 // Do something with a packet for a source.
 func processPacket(rs *source, request bool, data []byte) {
-	//		log.Printf("[%s] request=%t, got %d bytes", rs.src, request,
-	//			len(data))
 
 	stats.packets.rcvd++
 	if rs.synced {
@@ -307,7 +294,7 @@ func processPacket(rs *source, request bool, data []byte) {
 	qdata.count++
 	qdata.bytes += plen
 	rs.qtext, rs.qdata, rs.qbytes = text, qdata, plen
-	fmt.Println(rs.qtext)
+	log.Println(rs.qtext)
 }
 
 // carvePacket tries to pull a packet out of a slice of bytes. If so, it removes
